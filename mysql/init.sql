@@ -1,1 +1,3 @@
 CREATE DATABASE IF NOT EXISTS campuslab_catalog;
+
+CREATE DATABASE IF NOT EXISTS campuslab_bookings;

@@ -40,5 +40,26 @@ services:
       - "8081:8081"
 
 
+  bookings:
+    build:
+      context: ../ms-campuslab-bookings
+
+    container_name: campuslab-bookings
+    restart: unless-stopped
+
+    depends_on:
+      - mysql
+
+    environment:
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_NAME: campuslab_bookings
+      DB_USERNAME: ${MYSQL_USER}
+      DB_PASSWORD: ${MYSQL_PASSWORD}
+
+    ports:
+      - "8082:8082"
+
+
 volumes:
   mysql_data:
