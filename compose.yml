@@ -18,5 +18,27 @@ services:
       - mysql_data:/var/lib/mysql
       - ./mysql/init.sql:/docker-entrypoint-initdb.d/init.sql
 
+
+  catalog:
+    build:
+      context: ../ms-campuslab-catalog
+
+    container_name: campuslab-catalog
+    restart: unless-stopped
+
+    depends_on:
+      - mysql
+
+    environment:
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_NAME: campuslab_catalog
+      DB_USERNAME: ${MYSQL_USER}
+      DB_PASSWORD: ${MYSQL_PASSWORD}
+
+    ports:
+      - "8081:8081"
+
+
 volumes:
   mysql_data:
