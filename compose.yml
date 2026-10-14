@@ -80,6 +80,20 @@ services:
       BOOKINGS_URL: http://bookings:8082
 
 
+  frontend:
+    build:
+      context: ../frontend-campuslab
+
+    container_name: campuslab-frontend
+    restart: unless-stopped
+
+    depends_on:
+      - bff
+
+    ports:
+      - "4200:80"
+
+
 volumes:
 
   mysql_data:
