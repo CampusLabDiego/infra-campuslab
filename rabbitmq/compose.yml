@@ -1,0 +1,94 @@
+name: campuslab-mq
+
+services:
+  rabbit1:
+    image: rabbitmq:4.2.9-management
+    hostname: rabbit1
+    container_name: campuslab-rabbit1
+    restart: unless-stopped
+
+    environment:
+      RABBITMQ_NODENAME: rabbit@rabbit1
+      RABBITMQ_ERLANG_COOKIE: ${RABBITMQ_ERLANG_COOKIE:?Falta configurar la cookie}
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:?Falta configurar el usuario}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:?Falta configurar la contraseña}
+      RABBITMQ_DEFAULT_VHOST: campuslab
+
+    ports:
+      - "5672:5672"
+      - "127.0.0.1:15672:15672"
+
+    volumes:
+      - rabbit1_data:/var/lib/rabbitmq
+      - ./rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf:ro
+
+    networks:
+      - rabbitmq
+
+    mem_limit: 640m
+    cpus: 0.75
+
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "check_running"]
+      interval: 30s
+      timeout: 15s
+      retries: 5
+      start_period: 60s
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  rabbit2:
+    image: rabbitmq:4.2.9-management
+    hostname: rabbit2
+    container_name: campuslab-rabbit2
+    restart: unless-stopped
+
+    depends_on:
+      rabbit1:
+        condition: service_healthy
+
+    environment:
+      RABBITMQ_NODENAME: rabbit@rabbit2
+      RABBITMQ_ERLANG_COOKIE: ${RABBITMQ_ERLANG_COOKIE:?Falta configurar la cookie}
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:?Falta configurar el usuario}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:?Falta configurar la contraseña}
+      RABBITMQ_DEFAULT_VHOST: campuslab
+
+    ports:
+      - "5673:5672"
+      - "127.0.0.1:15673:15672"
+
+    volumes:
+      - rabbit2_data:/var/lib/rabbitmq
+      - ./rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf:ro
+
+    networks:
+      - rabbitmq
+
+    mem_limit: 640m
+    cpus: 0.75
+
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "check_running"]
+      interval: 30s
+      timeout: 15s
+      retries: 5
+      start_period: 60s
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  rabbitmq:
+    driver: bridge
+
+volumes:
+  rabbit1_data:
+  rabbit2_data:

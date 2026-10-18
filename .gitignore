@@ -1,1 +1,5 @@
 .env
+# Credenciales locales de RabbitMQ
+/rabbitmq/.env
+/rabbitmq/.env.*
+!/rabbitmq/.env.example
