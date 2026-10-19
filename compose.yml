@@ -119,6 +119,31 @@ services:
         max-size: "10m"
         max-file: "3"
 
+  rabbit-admin:
+    build:
+      context: ../ms-campuslab-rabbit-admin
+
+    container_name: campuslab-rabbit-admin
+    restart: unless-stopped
+
+    environment:
+      RABBITMQ_ADDRESSES: ${RABBITMQ_ADDRESSES:-172.31.45.233:5672,172.31.45.233:5673}
+      RABBITMQ_USER: ${RABBITMQ_USER:?Falta configurar RABBITMQ_USER}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:?Falta configurar RABBITMQ_PASSWORD}
+      RABBITMQ_VHOST: campuslab
+
+    expose:
+      - "8084"
+
+    mem_limit: 384m
+    memswap_limit: 768m
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
   bff:
     build:
       context: ../ms-campuslab-bff
@@ -130,6 +155,7 @@ services:
       - catalog
       - bookings
       - notifier
+      - rabbit-admin
 
     ports:
       - "8080:8080"
@@ -138,6 +164,7 @@ services:
       CATALOG_URL: http://catalog:8081
       BOOKINGS_URL: http://bookings:8082
       NOTIFIER_URL: http://notifier:8083
+      RABBIT_ADMIN_URL: http://rabbit-admin:8084
 
   frontend:
     build:
