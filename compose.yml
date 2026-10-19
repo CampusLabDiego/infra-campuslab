@@ -166,6 +166,9 @@ services:
       NOTIFIER_URL: http://notifier:8083
       RABBIT_ADMIN_URL: http://rabbit-admin:8084
 
+      SPRING_APPLICATION_JSON: >-
+        {"campuslab":{"security":{"allowed-origins":"http://localhost:4200,https://wktaaga6j4.execute-api.us-east-1.amazonaws.com"}}}
+
   frontend:
     build:
       context: ../frontend-campuslab
