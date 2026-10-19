@@ -70,6 +70,54 @@ services:
     expose:
       - "8082"
 
+  notifier:
+    build:
+      context: ../ms-campuslab-notifier
+
+    container_name: campuslab-notifier
+    restart: unless-stopped
+
+    depends_on:
+      - mysql
+
+    environment:
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_NAME: campuslab_notifier
+      DB_USERNAME: ${MYSQL_USER}
+      DB_PASSWORD: ${MYSQL_PASSWORD}
+
+      RABBITMQ_ADDRESSES: ${RABBITMQ_ADDRESSES:-172.31.45.233:5672,172.31.45.233:5673}
+      RABBITMQ_USER: ${RABBITMQ_USER:?Falta configurar RABBITMQ_USER}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:?Falta configurar RABBITMQ_PASSWORD}
+      RABBITMQ_VHOST: campuslab
+
+      MAIL_HOST: ${MAIL_HOST:?Falta configurar MAIL_HOST}
+      MAIL_PORT: ${MAIL_PORT:-587}
+      MAIL_USERNAME: ${MAIL_USERNAME:?Falta configurar MAIL_USERNAME}
+      MAIL_PASSWORD: ${MAIL_PASSWORD:?Falta configurar MAIL_PASSWORD}
+      MAIL_FROM: ${MAIL_FROM:?Falta configurar MAIL_FROM}
+      MAIL_SMTP_AUTH: ${MAIL_SMTP_AUTH:-true}
+      MAIL_STARTTLS: ${MAIL_STARTTLS:-true}
+      MAIL_STARTTLS_REQUIRED: ${MAIL_STARTTLS_REQUIRED:-true}
+
+      DOCUMENTS_PATH: /app/storage
+
+    expose:
+      - "8083"
+
+    volumes:
+      - notifier_documents:/app/storage
+
+    mem_limit: 512m
+    memswap_limit: 1g
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
   bff:
     build:
       context: ../ms-campuslab-bff
@@ -80,6 +128,7 @@ services:
     depends_on:
       - catalog
       - bookings
+      - notifier
 
     ports:
       - "8080:8080"
@@ -87,6 +136,7 @@ services:
     environment:
       CATALOG_URL: http://catalog:8081
       BOOKINGS_URL: http://bookings:8082
+      NOTIFIER_URL: http://notifier:8083
 
   frontend:
     build:
@@ -103,3 +153,4 @@ services:
 
 volumes:
   mysql_data:
+  notifier_documents:
