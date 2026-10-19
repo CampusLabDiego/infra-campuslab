@@ -16,8 +16,7 @@ services:
 
     volumes:
       - mysql_data:/var/lib/mysql
-      - ./mysql/init.sql:/docker-entrypoint-initdb.d/init.sql
-
+      - ./mysql/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
 
   catalog:
     build:
@@ -36,9 +35,13 @@ services:
       DB_USERNAME: ${MYSQL_USER}
       DB_PASSWORD: ${MYSQL_PASSWORD}
 
+      RABBITMQ_ADDRESSES: ${RABBITMQ_ADDRESSES:-172.31.45.233:5672,172.31.45.233:5673}
+      RABBITMQ_USER: ${RABBITMQ_USER:?Falta configurar RABBITMQ_USER}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:?Falta configurar RABBITMQ_PASSWORD}
+      RABBITMQ_VHOST: campuslab
+
     expose:
       - "8081"
-
 
   bookings:
     build:
@@ -57,9 +60,15 @@ services:
       DB_USERNAME: ${MYSQL_USER}
       DB_PASSWORD: ${MYSQL_PASSWORD}
 
+      CATALOG_URL: http://catalog:8081
+
+      RABBITMQ_ADDRESSES: ${RABBITMQ_ADDRESSES:-172.31.45.233:5672,172.31.45.233:5673}
+      RABBITMQ_USER: ${RABBITMQ_USER:?Falta configurar RABBITMQ_USER}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:?Falta configurar RABBITMQ_PASSWORD}
+      RABBITMQ_VHOST: campuslab
+
     expose:
       - "8082"
-
 
   bff:
     build:
@@ -79,7 +88,6 @@ services:
       CATALOG_URL: http://catalog:8081
       BOOKINGS_URL: http://bookings:8082
 
-
   frontend:
     build:
       context: ../frontend-campuslab
@@ -93,7 +101,5 @@ services:
     ports:
       - "4200:80"
 
-
 volumes:
-
   mysql_data:
