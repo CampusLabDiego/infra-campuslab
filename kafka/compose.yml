@@ -1,0 +1,198 @@
+name: campuslab-kafka
+
+x-kafka-common: &kafka-common
+  KAFKA_ZOOKEEPER_CONNECT: zookeeper1:2181,zookeeper2:2181,zookeeper3:2181
+  KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT
+  KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+  KAFKA_LISTENERS: INTERNAL://0.0.0.0:29092,EXTERNAL://0.0.0.0:9092
+  KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 3
+  KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 3
+  KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 2
+  KAFKA_DEFAULT_REPLICATION_FACTOR: 3
+  KAFKA_MIN_INSYNC_REPLICAS: 2
+  KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+  KAFKA_HEAP_OPTS: "-Xms512m -Xmx512m"
+  KAFKA_LOG_RETENTION_HOURS: 168
+  KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+
+services:
+  zookeeper1:
+    image: confluentinc/cp-zookeeper:7.9.11
+    hostname: zookeeper1
+    environment: &zookeeper-env
+      ZOOKEEPER_SERVER_ID: 1
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+      ZOOKEEPER_INIT_LIMIT: 5
+      ZOOKEEPER_SYNC_LIMIT: 2
+      ZOOKEEPER_SERVERS: "zookeeper1:2181:2888;zookeeper2:2181:2888;zookeeper3:2181:2888"
+    volumes:
+      - zookeeper1_data:/var/lib/zookeeper/data
+      - zookeeper1_log:/var/lib/zookeeper/log
+    healthcheck:
+      test: ["CMD-SHELL", "cub zk-ready zookeeper1 2181 20"]
+      interval: 15s
+      timeout: 10s
+      retries: 8
+    networks: [default]
+    mem_limit: 256m
+    cpus: 0.25
+
+  zookeeper2:
+    image: confluentinc/cp-zookeeper:7.9.11
+    hostname: zookeeper2
+    environment:
+      <<: *zookeeper-env
+      ZOOKEEPER_SERVER_ID: 2
+    volumes:
+      - zookeeper2_data:/var/lib/zookeeper/data
+      - zookeeper2_log:/var/lib/zookeeper/log
+    healthcheck:
+      test: ["CMD-SHELL", "cub zk-ready zookeeper2 2181 20"]
+      interval: 15s
+      timeout: 10s
+      retries: 8
+    networks: [default]
+    mem_limit: 256m
+    cpus: 0.25
+
+  zookeeper3:
+    image: confluentinc/cp-zookeeper:7.9.11
+    hostname: zookeeper3
+    environment:
+      <<: *zookeeper-env
+      ZOOKEEPER_SERVER_ID: 3
+    volumes:
+      - zookeeper3_data:/var/lib/zookeeper/data
+      - zookeeper3_log:/var/lib/zookeeper/log
+    healthcheck:
+      test: ["CMD-SHELL", "cub zk-ready zookeeper3 2181 20"]
+      interval: 15s
+      timeout: 10s
+      retries: 8
+    networks: [default]
+    mem_limit: 256m
+    cpus: 0.25
+
+  kafka1:
+    image: confluentinc/cp-kafka:7.9.11
+    hostname: kafka1
+    depends_on:
+      zookeeper1: {condition: service_healthy}
+      zookeeper2: {condition: service_healthy}
+      zookeeper3: {condition: service_healthy}
+    ports:
+      - "${KAFKA_BIND_ADDRESS:-0.0.0.0}:9092:9092"
+    environment:
+      <<: *kafka-common
+      KAFKA_BROKER_ID: 1
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka1:29092,EXTERNAL://${KAFKA1_ADVERTISED_HOST:?Configura el DNS o IP privada del broker 1}:9092
+    volumes:
+      - kafka1_data:/var/lib/kafka/data
+      - ./scripts:/opt/campuslab/scripts:ro
+    healthcheck:
+      test: ["CMD-SHELL", "cub kafka-ready -b localhost:9092 1 30"]
+      interval: 20s
+      timeout: 10s
+      retries: 10
+    networks: [default]
+    mem_limit: 1024m
+    cpus: 1.0
+
+  kafka2:
+    image: confluentinc/cp-kafka:7.9.11
+    hostname: kafka2
+    depends_on:
+      zookeeper1: {condition: service_healthy}
+      zookeeper2: {condition: service_healthy}
+      zookeeper3: {condition: service_healthy}
+    environment:
+      <<: *kafka-common
+      KAFKA_BROKER_ID: 2
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka2:29092,EXTERNAL://${KAFKA2_ADVERTISED_HOST:?Configura el DNS o IP privada del broker 2}:9093
+    ports:
+      - "${KAFKA_BIND_ADDRESS:-0.0.0.0}:9093:9092"
+    volumes:
+      - kafka2_data:/var/lib/kafka/data
+    healthcheck:
+      test: ["CMD-SHELL", "cub kafka-ready -b localhost:9092 1 30"]
+      interval: 20s
+      timeout: 10s
+      retries: 10
+    networks: [default]
+    mem_limit: 1024m
+    cpus: 1.0
+
+  kafka3:
+    image: confluentinc/cp-kafka:7.9.11
+    hostname: kafka3
+    depends_on:
+      zookeeper1: {condition: service_healthy}
+      zookeeper2: {condition: service_healthy}
+      zookeeper3: {condition: service_healthy}
+    environment:
+      <<: *kafka-common
+      KAFKA_BROKER_ID: 3
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka3:29092,EXTERNAL://${KAFKA3_ADVERTISED_HOST:?Configura el DNS o IP privada del broker 3}:9094
+    ports:
+      - "${KAFKA_BIND_ADDRESS:-0.0.0.0}:9094:9092"
+    volumes:
+      - kafka3_data:/var/lib/kafka/data
+    healthcheck:
+      test: ["CMD-SHELL", "cub kafka-ready -b localhost:9092 1 30"]
+      interval: 20s
+      timeout: 10s
+      retries: 10
+    networks: [default]
+    mem_limit: 1024m
+    cpus: 1.0
+
+  kafka-init:
+    image: confluentinc/cp-kafka:7.9.11
+    depends_on:
+      kafka1: {condition: service_healthy}
+      kafka2: {condition: service_healthy}
+      kafka3: {condition: service_healthy}
+    entrypoint: ["/bin/bash", "-lc"]
+    command: >-
+      kafka-topics --bootstrap-server kafka1:29092 --create --if-not-exists
+      --topic bookings.events --partitions 3 --replication-factor 3
+      --config cleanup.policy=delete --config retention.ms=604800000 &&
+      kafka-topics --bootstrap-server kafka1:29092 --create --if-not-exists
+      --topic audit.timeline --partitions 3 --replication-factor 3
+      --config cleanup.policy=compact,delete --config retention.ms=2592000000 &&
+      kafka-topics --bootstrap-server kafka1:29092 --create --if-not-exists
+      --topic bookings.events.DLT --partitions 3 --replication-factor 3
+      --config cleanup.policy=delete --config retention.ms=1209600000 &&
+      kafka-topics --bootstrap-server kafka1:29092 --create --if-not-exists
+      --topic audit.timeline.DLT --partitions 3 --replication-factor 3
+      --config cleanup.policy=delete --config retention.ms=1209600000
+    networks: [default]
+    restart: "no"
+
+  kafka-ui:
+    image: provectuslabs/kafka-ui:v0.7.2
+    depends_on:
+      kafka1: {condition: service_healthy}
+      kafka2: {condition: service_healthy}
+      kafka3: {condition: service_healthy}
+    environment:
+      KAFKA_CLUSTERS_0_NAME: campuslab
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka1:29092,kafka2:29092,kafka3:29092
+      KAFKA_CLUSTERS_0_ZOOKEEPER: zookeeper1:2181
+      DYNAMIC_CONFIG_ENABLED: "true"
+    ports:
+      - "127.0.0.1:8090:8080"
+    networks: [default]
+    mem_limit: 512m
+
+volumes:
+  zookeeper1_data:
+  zookeeper1_log:
+  zookeeper2_data:
+  zookeeper2_log:
+  zookeeper3_data:
+  zookeeper3_log:
+  kafka1_data:
+  kafka2_data:
+  kafka3_data:
