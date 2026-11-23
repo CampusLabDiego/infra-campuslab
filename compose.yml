@@ -136,6 +136,8 @@ services:
       RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:?Falta configurar RABBITMQ_PASSWORD}
       RABBITMQ_VHOST: campuslab
 
+      KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS:?Falta configurar KAFKA_BOOTSTRAP_SERVERS}
+
     expose:
       - "8084"
 
