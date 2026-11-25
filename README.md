@@ -1,13 +1,6 @@
 # Infraestructura CampusLab
 
-CampusLab permite gestionar recursos académicos y reservas mediante
-microservicios Spring Boot, Angular, Microsoft Entra ID y RabbitMQ.
-
-## Acceso público
-
-https://wktaaga6j4.execute-api.us-east-1.amazonaws.com
-
-El sistema necesita que las dos instancias EC2 y sus contenedores estén activos.
+Infraestructura de despliegue para CampusLab. El sistema integra Angular, microservicios Spring Boot, MySQL, RabbitMQ, Kafka, Microsoft Entra ID, Docker Compose y AWS API Gateway.
 
 ## Repositorios
 
@@ -16,18 +9,14 @@ El sistema necesita que las dos instancias EC2 y sus contenedores estén activos
 - [Reservas](https://github.com/CampusLabDiego/ms-campuslab-bookings)
 - [Catálogo](https://github.com/CampusLabDiego/ms-campuslab-catalog)
 - [Notificaciones y auditoría](https://github.com/CampusLabDiego/ms-campuslab-notifier)
-- [Administrador RabbitMQ](https://github.com/CampusLabDiego/ms-campuslab-rabbit-admin)
+- [Administración RabbitMQ y Kafka](https://github.com/CampusLabDiego/ms-campuslab-rabbit-admin)
 - [Infraestructura](https://github.com/CampusLabDiego/infra-campuslab)
 
 Los repositorios privados requieren acceso autorizado.
 
-## Distribución del despliegue
+## Componentes desplegados
 
 ### EC2 de aplicaciones
-
-IP privada: 172.31.45.240.
-
-Ejecuta:
 
 | Servicio | Puerto del contenedor | Responsabilidad |
 |---|---:|---|
@@ -36,156 +25,149 @@ Ejecuta:
 | catalog | 8081 | Recursos y movimientos de stock |
 | bookings | 8082 | Reservas y publicación de eventos |
 | notifier | 8083 | Correos, PDF y auditoría |
-| rabbit-admin | 8084 | Administración de topología RabbitMQ |
-| mysql | 3306 | Persistencia |
+| rabbit-admin | 8084 | Administración de RabbitMQ y Kafka |
+| mysql | 3306 | Persistencia de los microservicios |
 
-El frontend se publica en el puerto 4200 del host.
-Los microservicios 8081 a 8084 se comunican mediante la red interna de Docker.
+El frontend se publica en el puerto `4200` del host. Los microservicios se comunican mediante la red interna de Docker.
 
 ### EC2 de RabbitMQ
 
-IP privada: 172.31.45.233.
+RabbitMQ se ejecuta en una instancia separada con dos nodos de broker y la interfaz de administración.
 
-Ejecuta dos nodos unidos en un clúster:
+Los puertos de Management se enlazan a loopback en la instancia. Para acceder desde un computador se utiliza un túnel SSH. Ambos nodos están en la misma EC2; esto no proporciona tolerancia ante la caída completa de esa instancia. Las colas funcionales son classic y no se replican automáticamente por formar parte de un clúster.
 
-- rabbit1: puerto AMQP del host 5672.
-- rabbit2: puerto AMQP del host 5673.
-- Management UI: 127.0.0.1:15672 y 127.0.0.1:15673.
+### EC2 de Kafka
 
-Ambos nodos están en una misma EC2. Esta configuración no proporciona
-tolerancia a la caída completa de esa instancia.
+Kafka se despliega por separado usando `kafka/compose.yml`:
 
-Las colas utilizadas son classic; formar un clúster no implica
-que sus mensajes estén replicados entre ambos nodos.
+- Tres brokers Kafka.
+- Tres nodos ZooKeeper.
+- Volúmenes persistentes para brokers y ZooKeeper.
+- Kafka UI conectada al clúster.
+- Creación automática de los tópicos de aplicación mediante el servicio `kafka-init`.
 
-## HTTPS y API Gateway
+Kafka UI se enlaza a una dirección local de la EC2. Comprueba el puerto real con `docker compose ps` y usa un túnel SSH para abrirla desde el computador.
 
-La aplicación pública utiliza AWS API Gateway como entrada HTTPS.
+## API Gateway y HTTPS
 
-- GET / y GET /{proxy+}: integración al frontend en el puerto 4200.
-- Rutas funcionales /api/...: integración al BFF en el puerto 8080.
-- Las rutas de API protegidas utilizan autorizador JWT y scope access_as_user.
-- Las rutas OPTIONS se configuran sin autorización.
-- Las integraciones conservan la ruta mediante overwrite:path = $request.path.
+AWS API Gateway es la entrada HTTPS a la aplicación:
 
-Los archivos públicos de Angular no requieren token.
-Las operaciones de negocio requieren autenticación y autorización.
+- Las solicitudes del frontend se integran con el contenedor frontend.
+- Las rutas `/api/...` se integran con el BFF.
+- Las rutas protegidas utilizan autorización JWT y el scope configurado para la API.
+- Las solicitudes `OPTIONS` se permiten para CORS.
 
-Microsoft Entra ID tiene registradas las redirecciones SPA:
-
-- http://localhost:4200
-- https://wktaaga6j4.execute-api.us-east-1.amazonaws.com
+El origen de producción debe estar registrado como redirección SPA en Microsoft Entra ID.
 
 ## Autenticación y roles
 
-Angular utiliza MSAL para iniciar y cerrar sesión y obtener el Access Token.
-
-API Gateway, BFF y microservicios protegidos validan el token.
-El BFF aplica autorización por rol.
+Angular usa MSAL para iniciar sesión y obtener el Access Token. API Gateway, BFF y microservicios validan el token y los permisos correspondientes.
 
 | Rol | Acceso principal |
 |---|---|
-| Cliente | Catálogo, reservas propias y sus notificaciones/documentos |
-| Operador | Gestión de reservas y consulta de notificaciones/documentos |
-| Admin | Catálogo, reservas, auditoría y administración RabbitMQ |
+| Cliente | Catálogo, reservas propias y documentos autorizados |
+| Operador | Gestión de reservas y consulta de documentos autorizados |
+| Admin | Catálogo, reservas, auditoría y administración RabbitMQ/Kafka |
 | Auditor | Consulta del historial de auditoría |
 
-El rol Cliente puede confirmar la llegada de su reserva cuando
-se cumplen las condiciones de estado y horario.
+La autorización del frontend no reemplaza la validación realizada en el backend.
 
-## Mensajería
+## Mensajería RabbitMQ
 
-### Exchanges
+Exchanges principales:
 
 | Exchange | Tipo |
 |---|---|
-| cmd.direct | direct |
-| cmd.topic | topic |
-| cmd.dead.dlx | direct |
+| `cmd.direct` | direct |
+| `cmd.topic` | topic |
+| `cmd.dead.dlx` | direct |
 
-### Colas funcionales
+Colas funcionales:
 
 | Cola | Finalidad | DLQ |
 |---|---|---|
-| q.cmd.stock | Movimientos de stock | q.cmd.stock.dlq |
-| q.result.stock | Resultados de stock | q.result.stock.dlq |
-| q.cmd.email | Correos | q.cmd.email.dlq |
-| q.cmd.prep | Tickets de preparación | q.cmd.prep.dlq |
-| q.cmd.voucher | Comprobantes PDF | q.cmd.voucher.dlq |
-| q.evt.audit | Historial de eventos | q.evt.audit.dlq |
+| `q.cmd.stock` | Movimientos de stock | `q.cmd.stock.dlq` |
+| `q.result.stock` | Resultados de stock | `q.result.stock.dlq` |
+| `q.cmd.email` | Correos | `q.cmd.email.dlq` |
+| `q.cmd.prep` | Tickets de preparación | `q.cmd.prep.dlq` |
+| `q.cmd.voucher` | Comprobantes PDF | `q.cmd.voucher.dlq` |
+| `q.evt.audit` | Eventos de auditoría | `q.evt.audit.dlq` |
 
-Correos y comprobantes se publican en cmd.topic.
-Preparación y comandos de stock utilizan cmd.direct.
-Auditoría se publica en cmd.topic con routing key booking.audit.
+Los productores utilizan confirmaciones del broker y los consumidores procesan con ACK manual. Los fallos se reintentan de forma acotada y los mensajes no procesables se envían a una DLQ.
 
-### Confirmaciones y errores
+## Mensajería Kafka
 
-- Los productores utilizan confirmaciones del broker.
-- La outbox guarda publicaciones pendientes junto con el cambio de negocio.
-- Los consumidores utilizan ACK manual después de completar su procesamiento.
-- Los errores recuperables del consumidor tienen reintentos acotados.
-- Los errores permanentes o agotados se rechazan sin requeue y van a la DLQ.
-- Los listeners de DLQ registran sus metadatos en logs y confirman su consumo.
-- Los identificadores permiten reconocer entregas duplicadas.
+Los tópicos de aplicación se crean con tres particiones y factor de replicación tres:
 
-Una confirmación del broker no significa que el consumidor haya terminado.
+| Tópico | Uso | Retención |
+|---|---|---|
+| `bookings.events` | Eventos de reservas | 7 días |
+| `audit.timeline` | Eventos para auditoría | 30 días, compactación y eliminación |
+| `bookings.events.DLT` | Eventos de reservas fallidos | 14 días |
+| `audit.timeline.DLT` | Eventos de auditoría fallidos | 14 días |
 
-El envío SMTP tiene una limitación: si el servidor acepta un correo y el
-proceso falla antes de confirmar su persistencia, podría enviarse otra vez.
+Bookings publica eventos de auditoría en `bookings.events` y `audit.timeline`. Notifier consume ambos tópicos con el grupo `campuslab-notifier`, persiste los eventos en MySQL y utiliza los tópicos `.DLT` cuando el procesamiento falla.
 
-### Retención
+La API del microservicio `rabbit-admin` permite listar tópicos, consultar sus particiones, listar grupos de consumidores y crear tópicos. Estas rutas requieren el rol Admin.
 
-Las colas funcionales tienen:
+El tópico `demo.carga` se crea manualmente para pruebas de carga. No forma parte de la inicialización normal ni es consumido por Notifier.
 
-- TTL de mensajes: 24 horas.
-- Máximo: 10000 mensajes.
-- Máximo de bytes: 10 MiB.
-- Overflow: reject-publish.
+## Configuración de Kafka
 
-Las DLQ tienen:
+Copia el ejemplo y edita sus valores:
 
-- TTL: 7 días.
-- Límites de mensajes y bytes.
-- Overflow: drop-head.
+```bash
+cd kafka
+cp .env.example .env
+```
 
-Los mensajes de las DLQ pueden desaparecer rápidamente porque sus
-listeners los consumen y registran en logs.
+Configura `KAFKA_BIND_ADDRESS` y los valores `KAFKA1_ADVERTISED_HOST`, `KAFKA2_ADVERTISED_HOST` y `KAFKA3_ADVERTISED_HOST` con la dirección que corresponda a la EC2 Kafka.
 
-## Configuración local
+Inicia el clúster:
 
-Las credenciales se guardan en archivos .env excluidos de Git.
+```bash
+docker compose up -d
+docker compose ps
+```
 
-El Compose de aplicaciones necesita:
+Lista los tópicos:
 
-- MYSQL_ROOT_PASSWORD
-- MYSQL_DATABASE
-- MYSQL_USER
-- MYSQL_PASSWORD
-- RABBITMQ_USER
-- RABBITMQ_PASSWORD
-- MAIL_HOST
-- MAIL_PORT
-- MAIL_USERNAME
-- MAIL_PASSWORD
-- MAIL_FROM
+```bash
+docker compose exec kafka1 kafka-topics \
+  --bootstrap-server kafka1:29092 --list
+```
 
-Configuración adicional:
+La configuración de aplicaciones, en el `.env` de la raíz de infraestructura, debe incluir:
 
-- RABBITMQ_ADDRESSES
-- MAIL_TEST_RECIPIENT
-- MAIL_SMTP_AUTH
-- MAIL_STARTTLS
-- MAIL_STARTTLS_REQUIRED
+```text
+KAFKA_BOOTSTRAP_SERVERS=IP_PRIVADA_KAFKA:9092,IP_PRIVADA_KAFKA:9093,IP_PRIVADA_KAFKA:9094
+```
 
-MAIL_TEST_RECIPIENT permite redirigir los correos durante pruebas.
-Si está vacío, se utiliza el destinatario del evento.
+Las direcciones deben ser alcanzables desde la EC2 de aplicaciones. No uses una IP pública dinámica como dirección anunciada del clúster.
 
-La contraseña SMTP de Gmail debe ser una contraseña de aplicación.
+## Configuración de la aplicación
 
-El Compose de RabbitMQ utiliza su propio archivo rabbitmq/.env
-y las variables indicadas en rabbitmq/.env.example.
+El Compose de aplicaciones utiliza variables de entorno para bases de datos, RabbitMQ y correo. Entre ellas:
 
-## Estructura en la EC2 de aplicaciones
+```text
+MYSQL_ROOT_PASSWORD
+MYSQL_DATABASE
+MYSQL_USER
+MYSQL_PASSWORD
+RABBITMQ_ADDRESSES
+RABBITMQ_USER
+RABBITMQ_PASSWORD
+MAIL_HOST
+MAIL_PORT
+MAIL_USERNAME
+MAIL_PASSWORD
+MAIL_FROM
+KAFKA_BOOTSTRAP_SERVERS
+```
+
+`MAIL_TEST_RECIPIENT` permite redirigir los correos durante pruebas. El archivo `.env` contiene valores del entorno y no debe subirse al repositorio.
+
+## Estructura esperada en la EC2 de aplicaciones
 
 ```text
 ~/campuslab/
@@ -198,25 +180,16 @@ y las variables indicadas en rabbitmq/.env.example.
   ms-campuslab-rabbit-admin/
 ```
 
-## Arranque
+## Arranque de la aplicación
 
-Primero inicia RabbitMQ en su EC2:
-
-```bash
-cd ~/infra-campuslab/rabbitmq
-docker compose up -d
-docker compose exec rabbit1 rabbitmqctl cluster_status
-```
-
-En la EC2 de aplicaciones:
+Primero comprueba la configuración:
 
 ```bash
 cd ~/campuslab/infra-campuslab
 docker compose config --quiet
 ```
 
-Para construir las imágenes, ejecuta cada comando después de que
-el anterior termine correctamente:
+Construye las imágenes de forma secuencial para reducir el uso de memoria:
 
 ```bash
 docker compose build catalog
@@ -227,47 +200,22 @@ docker compose build bff
 docker compose build frontend
 ```
 
-Después:
+Luego inicia los servicios:
 
 ```bash
 docker compose up -d
 docker compose ps
 ```
 
-La EC2 tiene recursos limitados: evita builds simultáneos.
-
-Los contenedores con estado Up pueden seguir inicializándose.
-Comprueba los mensajes Started en los servicios Spring Boot.
+Un contenedor en estado `Up` puede seguir inicializándose. Revisa los logs y confirma el mensaje de inicio de cada servicio Spring Boot.
 
 ## Persistencia
 
-- mysql_data conserva las bases de datos.
-- notifier_documents conserva los PDF.
-- Los nodos RabbitMQ tienen volúmenes persistentes.
+Los volúmenes Docker conservan las bases de datos, los documentos generados y los datos de Kafka y RabbitMQ.
 
-No ejecutes docker compose down -v si necesitas conservar los datos.
+No ejecutes `docker compose down -v` si necesitas conservar esos datos.
 
-Las bases de datos de catálogo, reservas y notifier deben existir y
-tener los permisos necesarios. El script de inicialización de MySQL
-se ejecuta al inicializar un directorio de datos vacío.
-
-## Reinicio de AWS Academy
-
-1. Iniciar la sesión del laboratorio.
-2. Encender ambas EC2.
-3. Comprobar contenedores y clúster.
-4. Revisar la IP pública de la EC2 de aplicaciones.
-5. Si cambió, actualizar las dos integraciones de API Gateway:
-   - BFF: http://NUEVA_IP:8080
-   - Frontend: http://NUEVA_IP:4200
-
-La dirección de API Gateway permanece mientras se conserve la API.
-
-La configuración actual de RabbitMQ usa la IP privada de su EC2.
-Si esa dirección cambia por reemplazo de la instancia, también debe
-actualizarse RABBITMQ_ADDRESSES.
-
-## Comandos de diagnóstico
+## Diagnóstico
 
 ```bash
 docker compose ps
@@ -277,41 +225,30 @@ free -h
 df -h /
 ```
 
-Publicación y consumo de tareas:
+Para revisar tópicos y grupos Kafka, utiliza Kafka UI o los comandos Kafka desde la EC2 correspondiente.
 
-```bash
-docker compose logs --since=10m bookings notifier |
-  grep -E 'Tarea publicada|Tarea confirmada|Reintentando tarea|DLQ'
-```
+## Reinicio del entorno AWS
 
-Auditoría:
+1. Inicia el laboratorio de AWS y enciende las instancias.
+2. Comprueba los contenedores de cada EC2.
+3. Comprueba la salud de los clústeres RabbitMQ y Kafka.
+4. Revisa si cambió la IP pública de la EC2 de aplicaciones.
+5. Si cambió, actualiza las integraciones de API Gateway del BFF y frontend.
+6. Si cambió una IP privada por reemplazo de una instancia, actualiza las direcciones de RabbitMQ o Kafka en la configuración de la aplicación.
 
-```bash
-docker compose logs --since=10m bookings notifier |
-  grep -E 'Auditoría publicada|Auditoría confirmada|Auditoría en DLQ'
-```
+## Evidencias funcionales
 
-## Evidencias funcionales realizadas
+- Inicio de sesión y acceso según rol.
+- Rechazo de acceso administrativo para usuarios sin rol autorizado.
+- Administración de colas, exchanges y bindings RabbitMQ.
+- Consulta y creación de tópicos Kafka mediante la API administrativa.
+- Consulta del grupo de consumidores `campuslab-notifier`.
+- Publicación y consumo de eventos de reservas y auditoría.
+- Envío controlado de eventos fallidos a sus tópicos DLT.
+- Procesamiento de stock y tareas asíncronas.
+- Consulta de eventos en la vista de auditoría.
+- Acceso HTTPS a la aplicación mediante API Gateway.
 
-- Login y acceso según rol.
-- Cliente rechazado con HTTP 403 en la API administrativa.
-- Creación y eliminación de colas, exchanges y bindings.
-- Nombre de cola inválido: HTTP 400 con detalle.
-- Publicación y consumo mediante exchanges direct y topic.
-- Procesamiento de correos, tickets y comprobantes.
-- Movimiento de stock mediante mensajería.
-- Rechazo controlado hacia las tres DLQ de tareas.
-- Fallo SMTP controlado: reintentos y envío a DLQ al tercer intento.
-- Expiración de mensajes en una cola de demostración.
-- Rechazo de publicaciones al alcanzar el límite de una cola.
-- Auditoría de solicitudes y confirmaciones de cambios de estado.
-- Acceso público HTTPS y operaciones integradas.
+## Alcance pendiente
 
-## Alcance y pendientes
-
-La auditoría implementada utiliza RabbitMQ y MySQL.
-Registra eventos generados desde su activación, sin reconstrucción histórica.
-
-El módulo de reportería de indicadores del caso todavía está pendiente.
-La interfaz RabbitMQ Management muestra métricas del broker, que son
-distintas de los indicadores de negocio de reportería.
+La reportería de indicadores de negocio es distinta de las métricas técnicas que muestran Kafka UI y RabbitMQ Management. Si la rúbrica exige indicadores de negocio, deben presentarse en un módulo de reportería o documentarse como pendiente.
